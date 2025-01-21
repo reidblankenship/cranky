@@ -1,98 +1,217 @@
+#include <cassert>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 
+namespace fs = std::filesystem;
+
 const auto VERSION = "0.0.1";
-const std::filesystem::path HOME = std::getenv("HOME");
-const std::filesystem::path templ_path = HOME / ".local/share/cranky/templates";
+const fs::path HOME = std::getenv("HOME");
+const fs::path TEMPLATE_PATH = HOME / ".local/share/cranky/templates";
 
-enum language {
-  cpp,
-  c,
+namespace g {
+std::string project_name = "";
+fs::path update_src = "";
+} // namespace g
+
+enum class project_lang
+{
+    uninit,
+    cpp,
+    c,
 };
 
-enum project_type {
-  console,
-  glfw_opengl,
+enum class project_type
+{
+    uninit,
+    console,
+    glfw_opengl,
 };
 
-void setup_project(language language, project_type project_type,
-                   std::string project_name) {
-  std::string main_file_name = "main.c";
-  std::filesystem::path copy_path = templ_path;
+enum class command
+{
+    invalid,
+    help,
+    init,
+    create,
+    add,
+    remove,
+};
 
-  switch (language) {
-  case c:
-    copy_path.append("c");
-    break;
-  case cpp:
-    copy_path.append("cpp");
-    main_file_name.append("pp");
-    break;
-  }
+const std::pair<project_lang, const char*> EXT_MAPPINGS[] = {
+    std::make_pair(project_lang::c, "c"),
+    std::make_pair(project_lang::cpp, "cpp"),
+};
 
-  switch (project_type) {
-  case console:
-    copy_path.append("console");
-    break;
-  case glfw_opengl:
-    copy_path.append("glfw_opengl");
-    break;
-  }
-  copy_path = copy_path.make_preferred();
-  const auto dest_path = std::filesystem::current_path() / project_name;
-  std::cout << "Preferred Copy Path = " << copy_path << "\n";
-  std::cout << "Preferred Dest Path = " << dest_path << "\n";
-  std::filesystem::copy(copy_path, dest_path,
-                        std::filesystem::copy_options::recursive);
+void
+ensure_project_config_file()
+{
+    if (!fs::exists(fs::current_path() / ".cranky")) {
+        auto copy_from = TEMPLATE_PATH / ".cranky";
+        fs::copy_file(copy_from, fs::current_path());
+    }
 }
 
-int main(int argc, char **argv) {
+void
+setup_project(project_lang language,
+              project_type project_type,
+              std::optional<std::string> project_name = std::nullopt)
+{
+    ensure_project_config_file();
 
-  if (argc != 2) {
-    std::cerr << "INFO:\nUsage: rank [PROJECT NAME]\n";
-    return 1;
-  }
+    fs::path copy_from = TEMPLATE_PATH;
 
-  std::cout << "Project Language:\n";
-  std::cout << "1. C++ [Default]\n";
-  std::cout << "2. C\n";
+    switch (language) {
+        case project_lang::c:
+            copy_from /= "c";
+            break;
+        case project_lang::cpp:
+            copy_from /= "cpp";
+            break;
+        default:
+            throw std::runtime_error("Bad Language. Stop.");
+            break;
+    }
 
-  char iput[2];
-  std::cin.getline(iput, 2);
+    switch (project_type) {
+        case project_type::console:
+            copy_from /= "console";
+            break;
+        case project_type::glfw_opengl:
+            copy_from /= "glfw_opengl";
+            break;
+        default:
+            throw std::runtime_error("Bad Project Type. Stop.");
+            break;
+    }
+    copy_from.make_preferred();
+    auto dest_path = std::filesystem::current_path();
+    if (project_name)
+        dest_path /= project_name.value();
+    std::cout << "Copy Path = " << copy_from << "\n";
+    std::cout << "Dest Path = " << dest_path << "\n";
+    std::filesystem::copy(
+        copy_from, dest_path, std::filesystem::copy_options::recursive);
+}
 
-  language lang;
-  switch (iput[0]) {
-  case '2':
-    lang = c;
-    break;
+void
+show_help()
+{
+    std::cerr << "INFO:\nUsage: cranky [COMMAND] [OPTIONS]\n";
+}
 
-  default:
-    lang = cpp;
-    break;
-  }
+command
+parse_args(int argc, char** argv)
+{
+    assert(argc >= 0);
+    switch (argc) {
+        case 2: {
+            if (std::string_view(argv[1]) == "init") {
+                return command::init;
+            }
+            break;
+        }
+        case 3: {
+            auto command = std::string_view(argv[1]);
+            if (command == "create") {
+                g::project_name = argv[2];
+                return command::create;
+            } else if (command == "add") {
+                g::update_src = argv[2];
+                return command::add;
+            } else if (command == "remove") {
+                g::update_src = argv[2];
+                return command::remove;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    return command::help;
+}
 
-  project_type project_t;
+std::pair<project_lang, project_type>
+get_project_args()
+{
+    std::cout << "Project Language:\n";
+    std::cout << "1. C++\n";
+    std::cout << "2. C\n";
 
-  std::cout << "Project Type:\n";
-  std::cout << "1. Console [Default]\n";
-  std::cout << "2. GLFW /w GLAD Windowed\n";
+    char iput[2];
 
-  std::cin.getline(iput, 2);
+    project_lang lang = project_lang::uninit;
 
-  switch (iput[0]) {
-  case '2':
-    project_t = glfw_opengl;
-    break;
+    while (lang == project_lang::uninit) {
+        std::cin.getline(iput, 2);
+        switch (iput[0]) {
+            case '1':
+                lang = project_lang::c;
+                break;
 
-  default:
-    project_t = console;
-    break;
-  }
+            case '2':
+                lang = project_lang::cpp;
+                break;
 
-  std::cout << "Project Name = " << argv[1] << "\n";
+            default:
+                lang = project_lang::uninit;
+                break;
+        }
+    }
 
-  setup_project(lang, project_t, argv[1]);
+    project_type project_t = project_type::uninit;
 
-  return 0;
+    std::cout << "Project Type:\n";
+    std::cout << "1. Console\n";
+    std::cout << "2. GLFW /w GLAD Windowed\n";
+
+    while (project_t == project_type::uninit) {
+        std::cin.getline(iput, 2);
+
+        switch (iput[0]) {
+            case '1':
+                project_t = project_type::console;
+                break;
+            case '2':
+                project_t = project_type::glfw_opengl;
+                break;
+            default:
+                project_t = project_type::uninit;
+                break;
+        }
+    }
+    return { lang, project_t };
+}
+
+int
+handle_command(command ct)
+{
+    switch (ct) {
+        case command::init:
+        case command::create: {
+            auto args = get_project_args();
+            setup_project(args.first, args.second, g::project_name);
+            break;
+        }
+        case command::add:
+            break;
+        case command::remove:
+            break;
+        case command::help:
+        case command::invalid:
+            show_help();
+            return 1;
+            break;
+    }
+    return 0;
+};
+
+int
+main(int argc, char** argv)
+{
+    command ct = parse_args(argc, argv);
+    return handle_command(ct);
+
+    return 0;
 }
