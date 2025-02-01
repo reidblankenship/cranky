@@ -8,19 +8,37 @@
 #include <cstring>
 #include <functional>
 #include <map>
-#include <set>
+#include <optional>
 #include <string>
 #include <unordered_map>
+
+#define CRANKY_VERSION "0.0.2"
+
+#define eprintln(fmt...)                                                       \
+    fprintf(stderr, fmt);                                                      \
+    fprintf(stderr, "\n");
 
 #define println(fmt...)                                                        \
     printf(fmt);                                                               \
     printf("\n");
 
+#define breakln() printf("\n");
+
+#define print_vec(vec, elem_t)                                                 \
+    std::copy(std::begin(vec), std::end(vec),                                  \
+              std::ostream_iterator<elem_t>(std::cout, " "));                  \
+    breakln()
+
 // clang-format off
 const std::map<std::string, const char *> help_table = {
     std::make_pair("help",
                    "Usage: cranky help [COMMAND]\n"
-                   "Help information for specific command.\n"),
+                   "Help information for specific command.\n"
+                   "Without [COMMAND], displays all help info.\n"),
+
+    std::make_pair("version",
+                   "Usage: cranky version\n"
+                   "Shows version info.\n"),
 
     std::make_pair("new",
                    "Usage: cranky new [PROJECT NAME]\n"
@@ -33,6 +51,10 @@ const std::map<std::string, const char *> help_table = {
                    "Project Configuration options are prompted.\n"),
 };
 // clang-format on
+
+void show_version() {
+    println("cranky Version: %s", CRANKY_VERSION);
+}
 
 void show_help() {
     println("Usage: cranky [COMMAND] [OPTIONS]\n"
@@ -50,76 +72,73 @@ void show_help_with(const char *with) {
     const auto &help = help_table.find(with);
     if (help == help_table.end()) {
         show_help();
-        println("No help options found for \"%s\". Sorry.", with);
+        println("No valid command found for: \"%s\".", with);
         return;
     }
     println("%s", help->second);
 }
 
-const std::unordered_map<std::string, size_t> COMMAND_NUM_OPTS = {
+const std::unordered_map<std::string, size_t> ALL_CMDS_OPTS = {
     std::make_pair("init", 0),
+    std::make_pair("version", 0),
+    std::make_pair("help", 0),
     std::make_pair("help", 1),
     std::make_pair("new", 1),
 };
 
 const std::unordered_map<std::string, std::function<void(const char *)>>
-    COMMAND_ONE_OPT = {
+    CMD_ONE_OPT = {
         std::make_pair("new", new_project),
         std::make_pair("help", show_help_with),
 };
 
-const std::unordered_map<std::string, std::function<void()>> COMMAND_NO_OPT = {
+const std::unordered_map<std::string, std::function<void()>> CMD_NO_OPT = {
     std::make_pair("init", init_project),
+    std::make_pair("version", show_version),
+    std::make_pair("help", show_help),
 };
 
-bool check_conflicting_commands(const std::set<std::string> &commands_used) {
-    return (commands_used.contains("init") &&
-            (commands_used.contains("new") || commands_used.contains("help")));
+cranky_vec_args cmd_vec(int argc, char **argv) {
+    cranky_vec_args ret{};
+    const auto &FIRST_ARG = argv[1];
+    const auto &SECOND_ARG = argv[2];
+    const auto &cmd_no_options = CMD_NO_OPT.contains(FIRST_ARG) && argc == 2;
+    const auto &cmd_one_option = (CMD_ONE_OPT.contains(FIRST_ARG) &&
+                                  (SECOND_ARG != nullptr) && argc == 3);
+
+    if (cmd_no_options) {
+        ret.emplace_back(FIRST_ARG, std::nullopt);
+    } else if (cmd_one_option) {
+        ret.emplace_back(FIRST_ARG,
+                         std::make_optional<std::string>(SECOND_ARG));
+    } else {
+        show_help_with(FIRST_ARG);
+        exit(1);
+    }
+    return ret;
 }
 
-Command::Command(int argc, char **argv) {
-    std::set<std::string> commands_used;
-    std::vector<std::string> foo;
+void Command::print_args(const cranky_vec_args& args) const {
+    size_t i = 0;
+    for (auto cmd = args.begin(); cmd != args.end(); cmd++) {
+        println(
+            "cmd[%zu].first = %s, .second = %s", i, cmd->first.c_str(),
+            (cmd->second.has_value() ? cmd->second.value() : "None").c_str());
+        i++;
+    }
+}
+
+cranky_vec_args Command::parse_exec(int argc, char **argv) {
+    cranky_vec_args args{};
     if (argc == 1) {
         show_help();
-        return;
+        exit(1);
     }
-    for (int i = 1; i < argc; i++) {
-        if (check_conflicting_commands(commands_used)) {
-            println("Conflicting commands.");
-            show_help();
-            exit(2);
-        }
-        if (commands_used.find(argv[i]) != commands_used.end()) {
-            println("Can't use the same command multiple times.");
-            size_t idx = 0;
-            for (const auto &cmd : commands_used) {
-                println("Command %zu = %s", idx, cmd.c_str());
-            }
-            exit(1);
-        }
-        const auto &cmd = COMMAND_NUM_OPTS.find(argv[i]);
-        if (cmd == COMMAND_NUM_OPTS.end()) {
-            exit(420);
-        }
-        if (!argv[(cmd->second + i)]) {
-            println("Command \"%s\" requires %zu options", cmd->first.c_str(),
-                    cmd->second);
-            exit(69);
-        }
-        commands_used.insert(cmd->first);
-        i += cmd->second;
+    args = cmd_vec(argc, argv);
+    if (args.front().second.has_value()) {
+        CMD_ONE_OPT.at(args.front().first)(args.front().second.value().c_str());
+    } else {
+        CMD_NO_OPT.at(args.front().first)();
     }
-    for (int i = 1; i < argc; i++) {
-        if (COMMAND_NO_OPT.find(argv[i]) != COMMAND_NO_OPT.end()) {
-            auto action = COMMAND_NO_OPT.find(argv[i]);
-            action->second();
-        }
-        if (COMMAND_ONE_OPT.find(argv[i]) != COMMAND_ONE_OPT.end()) {
-            auto action = COMMAND_ONE_OPT.find(argv[i]);
-            action->second(argv[i + 1]);
-            i++;
-            continue;
-        }
-    }
+    return args;
 }

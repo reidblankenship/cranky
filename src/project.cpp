@@ -5,7 +5,6 @@
 
 namespace fs = std::filesystem;
 
-const auto VERSION = "0.0.1";
 const fs::path HOME = std::getenv("HOME");
 const fs::path TEMPLATE_PATH = HOME / ".local/share/cranky/templates";
 
@@ -79,11 +78,11 @@ std::pair<project_lang, project_type> get_project_args() {
     std::cin.getline(iput, 2);
     switch (iput[0]) {
     case '1':
-      lang = project_lang::c;
+      lang = project_lang::cpp;
       break;
 
     case '2':
-      lang = project_lang::cpp;
+      lang = project_lang::c;
       break;
 
     default:
