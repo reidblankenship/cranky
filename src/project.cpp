@@ -116,11 +116,11 @@ std::pair<project_lang, project_type> get_project_args() {
 }
 
 void init_project() {
-    auto args = get_project_args();
-    setup_project(args.first, args.second);
+  auto args = get_project_args();
+  setup_project(args.first, args.second);
 }
 
-void new_project(const char* project_name) {
-    auto args = get_project_args();
-    setup_project(args.first, args.second, project_name);
+void new_project(const char *project_name) {
+  auto args = get_project_args();
+  setup_project(args.first, args.second, project_name);
 }
